@@ -3,11 +3,11 @@ package fintrack.dao;
 import java.sql.Connection;
 import java.sql.Date;
 import java.sql.PreparedStatement;
-import java.sql.SQLException;
-import java.util.List;
-import java.util.ArrayList;
 import java.sql.ResultSet;
-
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
 
 import fintrack.db.Conexao;
 import fintrack.exception.ValorInvalidoException;
@@ -28,61 +28,40 @@ public class TransacaoDao {
      * Responsável por criar a tabela no SQLite
      */
     private void criarTabela() {
-        Connection conexao = null;
-        try {
-            conexao = Conexao.conectar();
-            String sql = """
-                CREATE TABLE IF NOT EXISTS transacoes (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    descricao VARCHAR(100),
-                    valor INTEGER,
-                    tipo VARCHAR(20),
-                    data DATE
-                );
-                """;
-            conexao.createStatement().execute(sql);
+        String sql = """
+            CREATE TABLE IF NOT EXISTS transacoes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                descricao VARCHAR(100),
+                valor INTEGER,
+                tipo VARCHAR(20),
+                data DATE
+            );
+            """;
+        try (Connection conexao = Conexao.conectar();
+             Statement stmt = conexao.createStatement()) {
+            stmt.execute(sql);
         } catch (SQLException e) {
             System.err.println("Erro ao criar tabela: " + e.getMessage());
-        } finally {
-            try {
-                if (conexao != null) conexao.close();
-            } catch (SQLException e) {
-                e.printStackTrace();
-            }
         }
     }
+
     /**
      * Garante que a transação será adicionada ao banco
      * @param t uma transação qualquer
-     * @throws SQLException caso ocorra erro ao consultar o banco
+     * @throws SQLException caso ocorra erro ao salvar
      */
     public void salvar(Transacao t) throws SQLException {
-        Connection conexao = null;
-        try {
-            conexao = Conexao.conectar();
-            conexao.setAutoCommit(false);
-
-            String sql = "INSERT INTO transacoes (descricao, valor, tipo, data) VALUES(?, ?, ?, ?)";
-            PreparedStatement stmt = conexao.prepareStatement(sql);
-            
+        String sql = "INSERT INTO transacoes (descricao, valor, tipo, data) VALUES(?, ?, ?, ?)";
+        try (Connection conexao = Conexao.conectar();
+             PreparedStatement stmt = conexao.prepareStatement(sql)) {
             stmt.setString(1, t.getDescricao());
-            stmt.setDouble(2, t.getValor()*100);
+            stmt.setLong(2, Math.round(t.getValor() * 100));
             stmt.setString(3, t.getTipo());
             stmt.setDate(4, Date.valueOf(t.getData()));
-
             stmt.executeUpdate();
-            conexao.commit();
-        } catch(SQLException e) {
-            if(conexao != null) {
-                conexao.rollback();
-                System.err.println("Erro ao salvar" + e.getMessage());
-            }
-        } finally {
-            if(conexao != null) {
-                conexao.close();
-            }
         }
     }
+
     /**
      * Método responsável por trazer uma lista contendo
      * todas as transações salvas no banco
@@ -90,112 +69,66 @@ public class TransacaoDao {
      * @throws SQLException caso ocorra erro ao consultar o banco
      */
     public List<Transacao> buscarTodos() throws SQLException {
-        Connection conexao = null;
         List<Transacao> lista = new ArrayList<>();
-        try {
-            conexao = Conexao.conectar();
-
-            String sql = "SELECT * FROM transacoes";
-
-            PreparedStatement stmt = conexao.prepareStatement(sql);
-            ResultSet rs = stmt.executeQuery();
-
-            while(rs.next()){
+        String sql = "SELECT * FROM transacoes";
+        try (Connection conexao = Conexao.conectar();
+             PreparedStatement stmt = conexao.prepareStatement(sql);
+             ResultSet rs = stmt.executeQuery()) {
+            while (rs.next()) {
                 String tipo = rs.getString("tipo");
-                if(tipo.equals("Receita mensal") || tipo.equals("Despesa mensal")) {
-                    TransacaoMensal tm = new TransacaoMensal(
-                        rs.getInt("id"),
-                        rs.getString("descricao"),
-                        rs.getInt("valor")/100.0,
-                        tipo,
-                        rs.getDate("data").toLocalDate()
-                    );
-                    lista.add(tm);
+                int id = rs.getInt("id");
+                String descricao = rs.getString("descricao");
+                double valor = rs.getLong("valor") / 100.0;
+                var data = rs.getDate("data").toLocalDate();
+
+                if ("Receita mensal".equals(tipo) || "Despesa mensal".equals(tipo)) {
+                    lista.add(new TransacaoMensal(id, descricao, valor, tipo, data));
                 } else {
-                    Transacao t = new Transacao(
-                        rs.getInt("id"),
-                        rs.getString("descricao"),
-                        rs.getInt("valor")/100.0,
-                        tipo,
-                        rs.getDate("data").toLocalDate()
-                    );
-                    lista.add(t);
+                    lista.add(new Transacao(id, descricao, valor, tipo, data));
                 }
             }
-        } catch (SQLException | ValorInvalidoException e) {
-            System.err.println("Erro ao buscar" + e.getMessage());
-        } finally {
-            if(conexao != null) {
-                conexao.close();
-            }
+        } catch (ValorInvalidoException e) {
+            throw new SQLException("Registro inválido no banco: " + e.getMessage(), e);
         }
         return lista;
     }
+
     /**
      * Remove a transação a partir do
      * id informado
-     * @param id id da transação a ser removida 
-     * @throws SQLException caso ocorra erro ao consultar o banco
+     * @param id id da transação a ser removida
+     * @throws SQLException caso ocorra erro ao remover
      */
-    public void remover(int id) throws SQLException{
-        Connection conexao = null;
-        try {
-            conexao = Conexao.conectar();
-            conexao.setAutoCommit(false);
-
-            String sql = "DELETE FROM transacoes WHERE id = ?";
-            PreparedStatement stmt = conexao.prepareStatement(sql);
+    public void remover(int id) throws SQLException {
+        String sql = "DELETE FROM transacoes WHERE id = ?";
+        try (Connection conexao = Conexao.conectar();
+             PreparedStatement stmt = conexao.prepareStatement(sql)) {
             stmt.setInt(1, id);
-
             stmt.executeUpdate();
-            conexao.commit();
-        } catch(SQLException e) {
-            if(conexao != null) {
-                conexao.rollback();
-                System.err.println("Erro ao deletar" + e.getMessage());
-            }
-        } finally {
-            if(conexao != null) {
-                conexao.close();
-            }
         }
     }
+
     /**
      * Devolve a soma de todas as transações
      * contidas no banco
      * @return saldo total
      * @throws SQLException caso ocorra erro ao consultar o banco
      */
-    public double buscarSaldo() throws SQLException{
-        Connection conexao = null;
-        double saldo = 0.0;
-        try {
-            conexao = Conexao.conectar();
-
-            String sql = """
-                SELECT SUM (
+    public double buscarSaldo() throws SQLException {
+        String sql = """
+            SELECT SUM (
                 CASE
                     WHEN tipo IN ('Receita', 'Receita mensal') THEN valor
                     WHEN tipo IN ('Despesa', 'Despesa mensal') THEN -valor
                     ELSE 0
                 END
-                ) FROM transacoes
-                 """;
-            
-            PreparedStatement stmt = conexao.prepareStatement(sql);
-            ResultSet rs = stmt.executeQuery();
-            if(rs.next()) {
-                saldo = rs.getInt(1);
-            } 
-        } catch(SQLException e) {
-            if(conexao != null) {
-                System.err.println("Erro ao buscar saldo" + e.getMessage());
-            }
-        } finally {
-            if(conexao != null) {
-                conexao.close();
-            }
+            ) FROM transacoes
+            """;
+        try (Connection conexao = Conexao.conectar();
+             PreparedStatement stmt = conexao.prepareStatement(sql);
+             ResultSet rs = stmt.executeQuery()) {
+            long saldo = rs.next() ? rs.getLong(1) : 0L;
+            return saldo / 100.0;
         }
-        return saldo/100.0;
     }
 }

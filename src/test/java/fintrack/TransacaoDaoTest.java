@@ -68,10 +68,10 @@ public class TransacaoDaoTest {
      * @throws ValorInvalidoException caso haja inserção de valor inválido
      */
     @Test
-    void buscarSaldo() throws SQLException, ValorInvalidoException {
-        Transacao t = new Transacao(0, "teste", 100, "Receita", LocalDate.now());
-        dao.salvar(t);
-        double saldo = dao.buscarSaldo();
-        assertTrue(saldo >= 100.00);
+        void buscarSaldo() throws SQLException, ValorInvalidoException {
+        double antes = dao.buscarSaldo();
+        dao.salvar(new Transacao(0, "teste", 100, "Receita", LocalDate.now()));
+        double depois = dao.buscarSaldo();
+        assertEquals(antes + 100.00, depois, 0.001);
     }
 }

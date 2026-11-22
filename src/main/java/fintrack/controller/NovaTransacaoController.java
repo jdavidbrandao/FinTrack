@@ -11,6 +11,7 @@ import javafx.stage.Stage;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
 import java.text.ParseException;
+import java.text.ParsePosition;
 import java.text.NumberFormat;
 import java.util.Locale;
 
@@ -33,12 +34,29 @@ public class NovaTransacaoController {
 
 
     /**
-     * Dita as normas na inicialização da tela 
+     * Dita as normas na inicialização da tela
      * de nova transação
      */
     @FXML void initialize() {
         campoData.getEditor().setDisable(true);
     }
+
+    /**
+     * Converte o texto digitado em número (formato pt-BR, ex: 1234,56).
+     * Rejeita textos com sobras, como "12abc", e pontos, como "10.5".
+     */
+    private double lerValor(String texto) throws ParseException {
+        NumberFormat nf = NumberFormat.getInstance(Locale.of("pt", "BR"));
+        nf.setGroupingUsed(false);
+        String limpo = texto.trim();
+        ParsePosition pos = new ParsePosition(0);
+        Number n = nf.parse(limpo, pos);
+        if (limpo.isEmpty() || pos.getIndex() != limpo.length()) {
+            throw new ParseException("Valor inválido", pos.getIndex());
+        }
+        return n.doubleValue();
+    }
+
     /**
      * Método que valida a adição da transação
      * ao banco
@@ -48,8 +66,7 @@ public class NovaTransacaoController {
         try {
             FinTracker tracker = new FinTracker();
 
-            NumberFormat nf = NumberFormat.getInstance(Locale.of("pt", "BR"));
-            double valor = nf.parse(campoValor.getText()).doubleValue();
+            double valor = lerValor(campoValor.getText());
             String tipo = ((RadioButton) tipoTransacao.getSelectedToggle()).getText();
 
             Transacao t;
@@ -70,7 +87,7 @@ public class NovaTransacaoController {
             Alert alerta = new Alert(Alert.AlertType.ERROR);
             alerta.setTitle("Erro");
             alerta.setHeaderText("Valor inválido");
-            alerta.setContentText("Digite um número válido no campo valor.");
+            alerta.setContentText("Digite um número válido no campo valor (ex: 10,50).");
             alerta.showAndWait();
         } catch(Exception e) {
             Alert alerta = new Alert(Alert.AlertType.ERROR);
@@ -80,6 +97,7 @@ public class NovaTransacaoController {
             alerta.showAndWait();
         }
     }
+
     /**
      * Método responsável por sair da tela de cadastrar
      * nova transação
